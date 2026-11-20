@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clima &amp; Pulsaciones — GISTEMP (1925–2025)</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.13/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.13/lib/addons/p5.sound.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/IDMNYCoastal/p5.js-speech@master/lib/p5.speech.js"></script>
+</head>
+<body>
+  <!-- VENTANAS INICIALES (3 PASOS) -->
+  <section id="onboarding" class="onboarding-overlay">
+    <div class="onboarding-card">
+      <div class="step-indicator">Paso <span id="stepNum">1</span> de 3</div>
+      <div id="stepContent">
+        <h2>1. El cambio climático en el tiempo</h2>
+        <p>Durante el último siglo, la temperatura superficial del planeta ha mostrado variaciones significativas respecto a su línea base histórica.</p>
+      </div>
+      <div class="onboarding-actions">
+        <button id="prevStepBtn" class="btn secondary" disabled>Anterior</button>
+        <button id="nextStepBtn" class="btn primary">Siguiente</button>
+        <button id="startAppBtn" class="btn success hidden">Comenzar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- APLICACIÓN PRINCIPAL -->
+  <div id="app" class="app-shell hidden">
+    <header class="top-bar">
+      <div class="map-mode-switch" role="group" aria-label="Modo de visualización del mapa">
+        <span>Mapa:</span>
+        <button class="mode-btn active" data-mode="continents">Continentes</button>
+        <button class="mode-btn" data-mode="countries">Países</button>
+        <button class="mode-btn" data-mode="flags">Banderas</button>
+      </div>
+
+      <div class="audio-controls">
+        <button id="toggleLoopBtn" class="btn small">Audio ambiente: OFF</button>
+        <button id="toggleVoiceBtn" class="btn small">Voz guía: ON</button>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <!-- SLIDER VERTICAL DE MESES -->
+      <aside class="month-panel">
+        <label for="monthSlider">MES</label>
+        <div id="monthLabel" class="badge">Enero</div>
+        <input id="monthSlider" type="range" min="0" max="11" value="0" orient="vertical" />
+      </aside>
+
+      <!-- CENTRO: MAPA + SOL + PULSACIONES + AÑO + PERSONAJE GUION -->
+      <section class="center-stage">
+        <div id="p5-container" class="p5-container"></div>
+
+        <div id="sunCharacter" class="sun-orb" title="Sol — Anomalía Global (clic para volver al modo Sol)">
+          <img src="assets/sol.png" alt="Sol" class="sun-icon-img" />
+          <div id="sunReadout" class="sun-readout">-- °C</div>
+        </div>
+
+        <div id="mapTooltip" class="map-tooltip hidden"></div>
+
+        <!-- SLIDER HORIZONTAL DE AÑOS -->
+        <div class="year-panel">
+          <label for="yearSlider">AÑO: <strong id="yearLabel">1925</strong></label>
+          <input id="yearSlider" type="range" min="1925" max="2025" value="1925" />
+        </div>
+
+        <!-- PERSONAJE INFERIOR + TEXTO GUION -->
+        <div id="narratorDock" class="narrator-dock">
+          <img id="narratorImg" src="assets/char_1.png" alt="Personaje Sol" class="narrator-char" />
+          <p id="narratorScript" class="narrator-script">
+            Modo Sol activo: observa cómo brilla el Sol y cambia la temperatura a lo largo del tiempo. Haz clic aquí o en el Sol para volver a este modo.
+          </p>
+        </div>
+      </section>
+
+      <!-- DERECHA: 4 ESTACIONES + CUADROS INFORMATIVOS -->
+      <aside class="seasons-panel">
+        <div class="season-row" data-season="DJF">
+          <button class="season-btn" data-season="DJF">
+            <img src="assets/invierno.png" alt="Invierno" class="season-btn-img" />
+            <span>DJF</span>
+          </button>
+          <div id="info-DJF" class="season-bubble hidden">Invierno N / Verano S</div>
+        </div>
+
+        <div class="season-row" data-season="MAM">
+          <button class="season-btn" data-season="MAM">
+            <img src="assets/primavera.png" alt="Primavera" class="season-btn-img" />
+            <span>MAM</span>
+          </button>
+          <div id="info-MAM" class="season-bubble hidden">Primavera N / Otoño S</div>
+        </div>
+
+        <div class="season-row" data-season="JJA">
+          <button class="season-btn" data-season="JJA">
+            <img src="assets/verano.png" alt="Verano" class="season-btn-img" />
+            <span>JJA</span>
+          </button>
+          <div id="info-JJA" class="season-bubble hidden">Verano N / Invierno S</div>
+        </div>
+
+        <div class="season-row" data-season="SON">
+          <button class="season-btn" data-season="SON">
+            <img src="assets/otono.png" alt="Otoño" class="season-btn-img" />
+            <span>SON</span>
+          </button>
+          <div id="info-SON" class="season-bubble hidden">Otoño N / Primavera S</div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- DOS MÉTRICAS LADO A LADO: VENTANA DE AÑOS (PARÍS) + COMPARATIVA POR MESES -->
+    <section class="metrics-row">
+      <div class="range-analysis">
+        <div class="range-controls">
+          <h3>Comparativa por ventana de años</h3>
+          <div class="range-inputs">
+            <label>Desde: <input id="rangeStart" type="number" min="1925" max="2025" value="1956" /></label>
+            <label>Hasta: <input id="rangeEnd" type="number" min="1925" max="2025" value="1970" /></label>
+            <button id="updateRangeBtn" class="btn small primary">Analizar ventana</button>
+          </div>
+          <p id="rangeSummary" class="range-summary">
+            Selecciona una ventana (ej. 1956–1970) para ver el promedio y su relación con los umbrales de +1.5 °C y +2.0 °C (base 1880–1900).
+          </p>
+        </div>
+        <canvas id="parisChart" width="420" height="140"></canvas>
+      </div>
+
+      <div class="range-analysis month-analysis">
+        <div class="range-controls">
+          <h3>Comparativa por meses (<span id="monthRangeYear">1925</span>)</h3>
+          <div class="range-inputs">
+            <label>Desde:
+              <select id="monthStartSelect">
+                <option value="0" selected>Enero</option>
+                <option value="1">Febrero</option>
+                <option value="2">Marzo</option>
+                <option value="3">Abril</option>
+                <option value="4">Mayo</option>
+                <option value="5">Junio</option>
+                <option value="6">Julio</option>
+                <option value="7">Agosto</option>
+                <option value="8">Septiembre</option>
+                <option value="9">Octubre</option>
+                <option value="10">Noviembre</option>
+                <option value="11">Diciembre</option>
+              </select>
+            </label>
+            <label>Hasta:
+              <select id="monthEndSelect">
+                <option value="0">Enero</option>
+                <option value="1">Febrero</option>
+                <option value="2">Marzo</option>
+                <option value="3">Abril</option>
+                <option value="4">Mayo</option>
+                <option value="5">Junio</option>
+                <option value="6">Julio</option>
+                <option value="7">Agosto</option>
+                <option value="8">Septiembre</option>
+                <option value="9">Octubre</option>
+                <option value="10">Noviembre</option>
+                <option value="11" selected>Diciembre</option>
+              </select>
+            </label>
+            <button id="updateMonthRangeBtn" class="btn small primary">Comparar meses</button>
+          </div>
+          <p id="monthRangeSummary" class="range-summary">
+            Selecciona un rango de meses para comparar sus anomalías en el año activo.
+          </p>
+        </div>
+        <canvas id="monthsChart" width="420" height="140"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
+  <script src="sketch.js"></script>
+</body>
+</html>
