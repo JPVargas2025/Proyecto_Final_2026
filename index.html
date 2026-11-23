@@ -18,7 +18,6 @@
     <div class="onboarding-card">
       <div class="onboarding-body-row">
         <div class="onboarding-text-col">
-          <div class="step-indicator">Paso <span id="stepNum">1</span> de 3</div>
           <div id="stepContent">
             <h2>1. El cambio climático en el tiempo</h2>
             <p>Durante el último siglo, la temperatura superficial del planeta ha mostrado variaciones significativas respecto a su línea base histórica.</p>
@@ -39,21 +38,23 @@
   <!-- APLICACIÓN PRINCIPAL -->
   <div id="app" class="app-shell hidden">
     <header class="top-bar">
+    <div class="top-bar-center">
       <div class="audio-controls">
-        <button id="toggleLoopBtn" class="btn small">Audio ambiente: OFF</button>
+       <button id="toggleLoopBtn" type="button" class="btn small">Audio ambiente: ON</button>
       </div>
 
-      <div class="map-mode-switch" role="group" aria-label="Modo de visualización del mapa">
+      <div class="map-mode-switch">
         <span>Mapa:</span>
-        <button class="mode-btn active" data-mode="continents">Continentes</button>
-        <button class="mode-btn" data-mode="countries">Países</button>
-        <button class="mode-btn" data-mode="flags">Banderas</button>
+        <button type="button" class="mode-btn active" data-mode="continents">Continentes</button>
+        <button type="button" class="mode-btn" data-mode="countries">Países</button>
+        <button type="button" class="mode-btn" data-mode="flags">Banderas</button>
       </div>
 
       <div class="voice-controls">
-        <button id="toggleVoiceBtn" class="btn small">Voz guía: ON</button>
+        <button id="toggleVoiceBtn" type="button" class="btn small">Voz guía: ON</button>
       </div>
-    </header>
+    </div>
+  </header>
 
     <main class="main-grid">
       <!-- SLIDER VERTICAL DE MESES -->
@@ -92,11 +93,11 @@
 
           <div class="narrator-script-box">
             <p id="narratorScript" class="narrator-script">
-              Modo Sol activo — Anomalía global en Enero de 1925: -0.30 °C respecto a 1951–1980.
+              Sol - Anomalía global en Enero de 1925: -0.30 °C respecto a 1951–1980.
             </p>
           </div>
 
-          <img id="narratorImg" src="assets/char_1.png" alt="Personaje Sol" class="narrator-char" title="Clic para volver al modo Sol" />
+          <img id="narratorImg" src="assets/char_1.1.png" alt="Personaje Sol" class="narrator-char" title="Clic para volver al modo Sol" />
         </div>
       </section>
 
