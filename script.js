@@ -20,18 +20,94 @@ const SEASON_COLORS = {
 };
 
 const SEASON_CHARS = {
-  SOL: "assets/char_1.png",
-  DJF: "assets/char_2.png",
-  MAM: "assets/char_3.png",
-  JJA: "assets/char_4.png",
-  SON: "assets/char_5.png"
+  SOL: [
+    "assets/char_1.1.png",
+    "assets/char_1.2.png",
+    "assets/char_1.3.png",
+    "assets/char_1.4.png",
+    "assets/char_1.5.png",
+    "assets/char_1.6.png"
+  ],
+  DJF: [
+    "assets/char_2.1.png",
+    "assets/char_2.2.png",
+    "assets/char_2.3.png",
+    "assets/char_2.4.png",
+    "assets/char_2.5.png",
+    "assets/char_2.6.png"
+  ],
+  MAM: [
+    "assets/char_3.1.png",
+    "assets/char_3.2.png",
+    "assets/char_3.3.png",
+    "assets/char_3.4.png",
+    "assets/char_3.5.png",
+    "assets/char_3.6.png"
+  ],
+  JJA: [
+    "assets/char_4.1.png",
+    "assets/char_4.2.png",
+    "assets/char_4.3.png",
+    "assets/char_4.4.png",
+    "assets/char_4.5.png",
+    "assets/char_4.6.png"
+  ],
+  SON: [
+    "assets/char_5.1.png",
+    "assets/char_5.2.png",
+    "assets/char_5.3.png",
+    "assets/char_5.4.png",
+    "assets/char_5.5.png",
+    "assets/char_5.6.png"
+  ]
 };
+
+// Índice actual (0..5) de expresión por personaje
+const expressionIndexByMode = {
+  SOL: 0,
+  DJF: 0,
+  MAM: 0,
+  JJA: 0,
+  SON: 0
+};
+
+function getCurrentCharacterMode() {
+  return appState.activeSeason && SEASON_CHARS[appState.activeSeason]
+    ? appState.activeSeason
+    : "SOL";
+}
+
+function getCharacterImageForMode(modeKey, exprIdx = 0) {
+  const key = SEASON_CHARS[modeKey] ? modeKey : "SOL";
+  const frames = SEASON_CHARS[key];
+  const safeIdx = ((exprIdx % frames.length) + frames.length) % frames.length;
+  return frames[safeIdx];
+}
+
+function renderCharacterExpression(modeKey, exprIdx) {
+  const imgEl = document.getElementById("narratorImg");
+  if (!imgEl) return;
+  imgEl.src = getCharacterImageForMode(modeKey, exprIdx);
+}
+
+function advanceCharacterExpression(modeKey = getCurrentCharacterMode(), resetToFirst = false) {
+  const key = SEASON_CHARS[modeKey] ? modeKey : "SOL";
+  const totalFrames = SEASON_CHARS[key].length;
+
+  if (resetToFirst) {
+    expressionIndexByMode[key] = 0;
+  } else {
+    expressionIndexByMode[key] = (expressionIndexByMode[key] + 1) % totalFrames;
+  }
+
+  renderCharacterExpression(key, expressionIndexByMode[key]);
+}
 
 // Iconos de las bolitas de sliders según modo activo
 const SLIDER_THUMB_ICONS = {
   SOL: "url('assets/sol.png')",
   DJF: "url('assets/invierno_anima.png')",
-  MAM: "url('assets/primevera_anima.png')",
+  MAM: "url('assets/primavera_anima.png')",
   JJA: "url('assets/verano_anima.png')",
   SON: "url('assets/otono_anima.png')"
 };
@@ -93,6 +169,7 @@ function selectSpanishVoice() {
 }
 
 function initVoice() {
+  if (voiceSynth) return;
   if (typeof p5 !== "undefined" && typeof p5.Speech !== "undefined") {
     voiceSynth = new p5.Speech();
     voiceSynth.setLang("es-ES");
@@ -110,15 +187,49 @@ function initVoice() {
   }
 }
 
-function speakInfo(text) {
-  if (!appState.voiceEnabled || !voiceSynth || !text) return;
-  selectSpanishVoice();
+function stopAllSpeech() {
+  clearTimeout(sliderSpeakTimer);
+  sliderSpeakTimer = null;
+
   try {
-    voiceSynth.cancel();
-  } catch (e) {
-    // Ignorar si no hay locución previa activa
+    if (voiceSynth) {
+      if (typeof voiceSynth.cancel === "function") voiceSynth.cancel();
+      if (typeof voiceSynth.stop === "function") voiceSynth.stop();
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  } catch (_) {}
+}
+
+function speakInfo(text) {
+  if (!appState.voiceEnabled || !text) return;
+  if (!voiceSynth) initVoice();
+
+  try {
+    if (voiceSynth && typeof voiceSynth.speak === "function") {
+      selectSpanishVoice();
+      try {
+        if (typeof voiceSynth.cancel === "function") voiceSynth.cancel();
+        else if (typeof voiceSynth.stop === "function") voiceSynth.stop();
+      } catch (_) {}
+      voiceSynth.speak(text);
+      return;
+    }
+  } catch (err) {
+    console.warn("p5.Speech falló, usando speechSynthesis:", err);
   }
-  voiceSynth.speak(text);
+
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = preferredSpanishVoice?.lang || "es-ES";
+    if (preferredSpanishVoice) utter.voice = preferredSpanishVoice;
+    window.speechSynthesis.speak(utter);
+  }
 }
 
 function getCurrentGlobalTemp() {
@@ -131,12 +242,17 @@ function getCurrentGlobalTemp() {
   return null;
 }
 
-function applyModeVisuals(modeKey) {
+function applyModeVisuals(modeKey, { resetExpression = false, advanceExpression = false } = {}) {
   const key = SLIDER_THUMB_ICONS[modeKey] ? modeKey : "SOL";
-  const imgEl = document.getElementById("narratorImg");
-  if (imgEl) {
-    imgEl.src = SEASON_CHARS[key];
+
+  if (resetExpression) {
+    advanceCharacterExpression(key, true);
+  } else if (advanceExpression) {
+    advanceCharacterExpression(key, false);
+  } else {
+    renderCharacterExpression(key, expressionIndexByMode[key] ?? 0);
   }
+
   document.documentElement.style.setProperty("--thumb-icon", SLIDER_THUMB_ICONS[key]);
 
   const sunCoinBtn = document.getElementById("sunSeasonCoinBtn");
@@ -148,12 +264,20 @@ function applyModeVisuals(modeKey) {
   });
 }
 
-function setNarratorText(text, shouldSpeak = false) {
+function setNarratorText(text, shouldSpeak = false, { advanceExpr = false } = {}) {
   const scriptEl = document.getElementById("narratorScript");
+  const prevText = scriptEl ? scriptEl.textContent : "";
+  const textChanged = Boolean(text && text !== prevText);
+
   if (scriptEl && text) {
     scriptEl.textContent = text;
   }
-  if (shouldSpeak && text) {
+
+  if (advanceExpr || textChanged) {
+    advanceCharacterExpression(getCurrentCharacterMode(), false);
+  }
+
+  if (shouldSpeak && text && appState.voiceEnabled) {
     speakInfo(text);
   }
 }
@@ -181,9 +305,9 @@ function narrateTemperatureChange(contextLabel = "", shouldSpeak = true) {
   lastTrackedTemp = curr;
   const prefix = contextLabel ? `${contextLabel} — ` : "";
   const fullText = `${prefix}${trendMsg}(${MONTHS[appState.monthIndex]} ${appState.year})`;
-  setNarratorText(fullText, false);
+  setNarratorText(fullText, false, { advanceExpr: true });
 
-  if (shouldSpeak) {
+  if (shouldSpeak && appState.voiceEnabled) {
     clearTimeout(sliderSpeakTimer);
     sliderSpeakTimer = setTimeout(() => {
       speakInfo(fullText);
@@ -534,8 +658,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (onboardingEl) onboardingEl.classList.remove("hidden");
   if (appEl) appEl.classList.add("hidden");
 
-  initVoice();
-  applyModeVisuals("SOL");
+  applyModeVisuals("SOL", { resetExpression: true });
   loadGistempDatasets();
 
   let stepIdx = 0;
@@ -577,6 +700,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   if (startBtn) {
     startBtn.addEventListener("click", () => {
+      initVoice();
+      if (typeof userStartAudio === "function") userStartAudio();
+      if (typeof startAmbientLoopIfReady === "function") startAmbientLoopIfReady();
       if (onboardingEl) onboardingEl.classList.add("hidden");
       if (appEl) appEl.classList.remove("hidden");
       if (typeof windowResized === "function") {
@@ -587,8 +713,8 @@ document.addEventListener("DOMContentLoaded", () => {
         lastTrackedTemp = curr;
         updateSunVisual(curr);
       }
-      applyModeVisuals("SOL");
-      setNarratorText(ONBOARDING_STEPS[2].body, true);
+      applyModeVisuals("SOL", { resetExpression: true });
+      setNarratorText(ONBOARDING_STEPS[2].body, true, { advanceExpr: false });
       renderRangeAndParisChart();
       renderMonthComparisonChart();
     });
@@ -608,6 +734,15 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleVoiceBtn.addEventListener("click", () => {
       appState.voiceEnabled = !appState.voiceEnabled;
       toggleVoiceBtn.textContent = `Voz guía: ${appState.voiceEnabled ? "ON" : "OFF"}`;
+      if (appState.voiceEnabled) {
+        initVoice();
+        if (typeof userStartAudio === "function") userStartAudio();
+        const currentScript = document.getElementById("narratorScript")?.textContent || "";
+        advanceCharacterExpression(getCurrentCharacterMode(), false);
+        speakInfo(currentScript);
+      } else {
+        stopAllSpeech();
+      }
     });
   }
 
@@ -640,7 +775,8 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => {
       const season = btn.dataset.season;
       appState.activeSeason = season;
-      applyModeVisuals(season);
+      // Arranca en la expresión 1 (.1) de la estación elegida
+      applyModeVisuals(season, { resetExpression: true });
 
       const nhVal = appState.nhByYear[appState.year]?.seasons?.[season];
       const shVal = appState.shByYear[appState.year]?.seasons?.[season];
@@ -648,19 +784,19 @@ document.addEventListener("DOMContentLoaded", () => {
         `${SEASON_COLORS[season].label} (${appState.year}): ` +
         `Norte ${nhVal !== null && nhVal !== undefined ? nhVal.toFixed(2) + " °C" : "s/d"} · ` +
         `Sur ${shVal !== null && shVal !== undefined ? shVal.toFixed(2) + " °C" : "s/d"}.`;
-      setNarratorText(msg, true);
+      setNarratorText(msg, true, { advanceExpr: false });
     });
   });
 
   const returnToSunMode = () => {
     appState.activeSeason = null;
-    applyModeVisuals("SOL");
+    applyModeVisuals("SOL", { advanceExpression: true });
 
     const displayVal = getCurrentGlobalTemp();
     const msg =
-      `Modo Sol activo — Anomalía global en ${MONTHS[appState.monthIndex]} de ${appState.year}: ` +
+      `Sol activo — Anomalía global en ${MONTHS[appState.monthIndex]} de ${appState.year}: ` +
       `${displayVal !== null ? (displayVal >= 0 ? "+" : "") + displayVal.toFixed(2) + " °C" : "sin dato"} respecto a 1951–1980.`;
-    setNarratorText(msg, true);
+    setNarratorText(msg, true, { advanceExpr: false });
   };
 
   const sunSeasonCoinBtn = document.getElementById("sunSeasonCoinBtn");
@@ -668,7 +804,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const narratorImgEl = document.getElementById("narratorImg");
   if (narratorImgEl) {
-    narratorImgEl.addEventListener("click", returnToSunMode);
+    narratorImgEl.addEventListener("click", () => {
+      advanceCharacterExpression(getCurrentCharacterMode(), false);
+      const currentText = document.getElementById("narratorScript")?.textContent || "";
+      if (currentText) {
+        if (!appState.voiceEnabled) {
+          appState.voiceEnabled = true;
+          const toggleVoiceBtn = document.getElementById("toggleVoiceBtn");
+          if (toggleVoiceBtn) toggleVoiceBtn.textContent = "Voz guía: ON";
+        }
+        speakInfo(currentText);
+      }
+    });
   }
 
   // Ventanas emergentes para gráficas (por ventana de años y por meses)
