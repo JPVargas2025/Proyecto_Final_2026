@@ -27,18 +27,30 @@ const SEASON_CHARS = {
   SON: "assets/char_5.png"
 };
 
+// Iconos de las bolitas de sliders según modo activo
+const SLIDER_THUMB_ICONS = {
+  SOL: "url('assets/sol.png')",
+  DJF: "url('assets/invierno_anima.png')",
+  MAM: "url('assets/primevera_anima.png')",
+  JJA: "url('assets/verano_anima.png')",
+  SON: "url('assets/otono_anima.png')"
+};
+
 const ONBOARDING_STEPS = [
   {
     title: "1. El cambio climático en el tiempo",
-    body: "Durante el último siglo (1925–2025), las anomalías de temperatura superficial tierra-océano de NASA GISTEMP muestran una tendencia marcada al calentamiento respecto al periodo base 1951–1980."
+    body: "Durante el último siglo (1925–2025), las anomalías de temperatura superficial tierra-océano de NASA GISTEMP muestran una tendencia marcada al calentamiento respecto al periodo base 1951–1980.",
+    image: "assets/imagen_1.png"
   },
   {
     title: "2. ¿Qué impulsa estos cambios?",
-    body: "Las emisiones de gases de efecto invernadero, el uso del suelo y la dinámica océano-atmósfera alteran el balance energético del planeta y se manifiestan de forma distinta según el mes, la estación y el hemisferio."
+    body: "Las emisiones de gases de efecto invernadero, el uso del suelo y la dinámica océano-atmósfera alteran el balance energético del planeta y se manifiestan de forma distinta según el mes, la estación y el hemisferio.",
+    image: "assets/imagen_2.png"
   },
   {
     title: "3. Visualización interactiva para la acción",
-    body: "Esta aplicación integra datos abiertos de NASA GISTEMP con señales visuales y sonoras para explorar ventanas de tiempo, comparar hemisferios y observar los umbrales del Acuerdo de París (+1.5 °C y +2.0 °C)."
+    body: "Esta aplicación integra datos abiertos de NASA GISTEMP con señales visuales y sonoras para explorar ventanas de tiempo, comparar hemisferios y observar los umbrales del Acuerdo de París (+1.5 °C y +2.0 °C).",
+    image: "assets/imagen_3.png"
   }
 ];
 
@@ -62,19 +74,50 @@ const appState = {
 };
 
 let voiceSynth = null;
+let preferredSpanishVoice = null;
 let lastTrackedTemp = null;
+let sliderSpeakTimer = null;
+
+function selectSpanishVoice() {
+  if (!voiceSynth || !Array.isArray(voiceSynth.voices) || voiceSynth.voices.length === 0) {
+    return;
+  }
+  const googleEs = voiceSynth.voices.find((v) => /google\s+español/i.test(v.name));
+  const anyEs = voiceSynth.voices.find(
+    (v) => /^es(-|_|$)/i.test(v.lang) || /spanish|español/i.test(v.name)
+  );
+  preferredSpanishVoice = googleEs || anyEs || null;
+  if (preferredSpanishVoice) {
+    voiceSynth.setVoice(preferredSpanishVoice.name);
+  }
+}
 
 function initVoice() {
   if (typeof p5 !== "undefined" && typeof p5.Speech !== "undefined") {
     voiceSynth = new p5.Speech();
     voiceSynth.setLang("es-ES");
     voiceSynth.setRate(1.0);
+    voiceSynth.onLoad = () => {
+      selectSpanishVoice();
+    };
+    selectSpanishVoice();
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.addEventListener("voiceschanged", () => {
+        selectSpanishVoice();
+      });
+    }
   }
 }
 
 function speakInfo(text) {
   if (!appState.voiceEnabled || !voiceSynth || !text) return;
-  voiceSynth.cancel();
+  selectSpanishVoice();
+  try {
+    voiceSynth.cancel();
+  } catch (e) {
+    // Ignorar si no hay locución previa activa
+  }
   voiceSynth.speak(text);
 }
 
@@ -88,10 +131,21 @@ function getCurrentGlobalTemp() {
   return null;
 }
 
-function setNarratorCharacter(modeKey) {
+function applyModeVisuals(modeKey) {
+  const key = SLIDER_THUMB_ICONS[modeKey] ? modeKey : "SOL";
   const imgEl = document.getElementById("narratorImg");
-  if (!imgEl) return;
-  imgEl.src = SEASON_CHARS[modeKey] || SEASON_CHARS.SOL;
+  if (imgEl) {
+    imgEl.src = SEASON_CHARS[key];
+  }
+  document.documentElement.style.setProperty("--thumb-icon", SLIDER_THUMB_ICONS[key]);
+
+  const sunCoinBtn = document.getElementById("sunSeasonCoinBtn");
+  if (sunCoinBtn) {
+    sunCoinBtn.classList.toggle("active", key === "SOL");
+  }
+  document.querySelectorAll(".season-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.season === key);
+  });
 }
 
 function setNarratorText(text, shouldSpeak = false) {
@@ -104,7 +158,7 @@ function setNarratorText(text, shouldSpeak = false) {
   }
 }
 
-function narrateTemperatureChange(contextLabel = "", shouldSpeak = false) {
+function narrateTemperatureChange(contextLabel = "", shouldSpeak = true) {
   const curr = getCurrentGlobalTemp();
   if (curr === null) return;
 
@@ -126,7 +180,15 @@ function narrateTemperatureChange(contextLabel = "", shouldSpeak = false) {
 
   lastTrackedTemp = curr;
   const prefix = contextLabel ? `${contextLabel} — ` : "";
-  setNarratorText(`${prefix}${trendMsg}(${MONTHS[appState.monthIndex]} ${appState.year})`, shouldSpeak);
+  const fullText = `${prefix}${trendMsg}(${MONTHS[appState.monthIndex]} ${appState.year})`;
+  setNarratorText(fullText, false);
+
+  if (shouldSpeak) {
+    clearTimeout(sliderSpeakTimer);
+    sliderSpeakTimer = setTimeout(() => {
+      speakInfo(fullText);
+    }, 350);
+  }
 }
 
 // Actualiza el estilo visual y brillo del Sol según anomalía global (°C)
@@ -151,14 +213,20 @@ function updateSunVisual(anomalyC) {
 
 // Calcula promedio de ventana y dibuja gráfica con umbrales de París (+1.5 °C y +2.0 °C vs 1880–1900)
 function renderRangeAndParisChart() {
-  const start = Math.min(appState.rangeStart, appState.rangeEnd);
-  const end = Math.max(appState.rangeStart, appState.rangeEnd);
+  const start = appState.rangeStart;
+  const end = appState.rangeEnd;
   const summaryEl = document.getElementById("rangeSummary");
   const canvas = document.getElementById("parisChart");
   if (!canvas || !summaryEl) return;
 
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
+    summaryEl.textContent =
+      "Coloca correctamente los años: el año 'Desde' debe ser menor o igual que el año 'Hasta'.";
+    return;
+  }
 
   const points = [];
   for (let y = start; y <= end; y++) {
@@ -229,19 +297,23 @@ function renderMonthComparisonChart() {
 
   const mStart = startSel ? Number(startSel.value) : 0;
   const mEnd = endSel ? Number(endSel.value) : 11;
-  const minM = Math.min(mStart, mEnd);
-  const maxM = Math.max(mStart, mEnd);
 
   if (yearSpan) yearSpan.textContent = String(appState.year);
 
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  if (mStart > mEnd) {
+    summaryEl.textContent =
+      "Coloca correctamente los meses: el mes 'Desde' no puede ser posterior al mes 'Hasta'.";
+    return;
+  }
+
   const gEntry = appState.globalByYear[appState.year];
   const monthsArr = gEntry?.months || [];
 
   const points = [];
-  for (let m = minM; m <= maxM; m++) {
+  for (let m = mStart; m <= mEnd; m++) {
     const val = monthsArr[m];
     if (val !== null && val !== undefined && Number.isFinite(val)) {
       points.push({ monthIdx: m, name: MONTHS[m], val });
@@ -258,7 +330,7 @@ function renderMonthComparisonChart() {
   const coldest = points.reduce((best, p) => (p.val < best.val ? p : best), points[0]);
 
   summaryEl.textContent =
-    `${MONTHS[minM]}–${MONTHS[maxM]} (${appState.year}): promedio ${avg >= 0 ? "+" : ""}${avg.toFixed(2)} °C | ` +
+    `${MONTHS[mStart]}–${MONTHS[mEnd]} (${appState.year}): promedio ${avg >= 0 ? "+" : ""}${avg.toFixed(2)} °C | ` +
     `Más cálido: ${warmest.name} (${warmest.val >= 0 ? "+" : ""}${warmest.val.toFixed(2)} °C) | ` +
     `Más frío: ${coldest.name} (${coldest.val >= 0 ? "+" : ""}${coldest.val.toFixed(2)} °C).`;
 
@@ -453,12 +525,22 @@ async function loadGistempDatasets() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Asegurar que al cargar o recargar la página se inicie en el onboarding con modales cerrados
+  document.querySelectorAll(".chart-modal").forEach((modal) => {
+    modal.classList.add("hidden");
+  });
+  const onboardingEl = document.getElementById("onboarding");
+  const appEl = document.getElementById("app");
+  if (onboardingEl) onboardingEl.classList.remove("hidden");
+  if (appEl) appEl.classList.add("hidden");
+
   initVoice();
-  setNarratorCharacter("SOL");
+  applyModeVisuals("SOL");
   loadGistempDatasets();
 
   let stepIdx = 0;
   const stepNumEl = document.getElementById("stepNum");
+  const stepImgEl = document.getElementById("onboardingStepImg");
   const stepContentEl = document.getElementById("stepContent");
   const prevBtn = document.getElementById("prevStepBtn");
   const nextBtn = document.getElementById("nextStepBtn");
@@ -466,36 +548,51 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderStep() {
     const s = ONBOARDING_STEPS[stepIdx];
-    stepNumEl.textContent = String(stepIdx + 1);
-    stepContentEl.innerHTML = `<h2>${s.title}</h2><p>${s.body}</p>`;
-    prevBtn.disabled = stepIdx === 0;
+    if (stepNumEl) stepNumEl.textContent = String(stepIdx + 1);
+    if (stepContentEl) stepContentEl.innerHTML = `<h2>${s.title}</h2><p>${s.body}</p>`;
+    if (stepImgEl && s.image) {
+      stepImgEl.src = s.image;
+      stepImgEl.onerror = () => {
+        stepImgEl.style.display = "none";
+      };
+      stepImgEl.onload = () => {
+        stepImgEl.style.display = "block";
+      };
+    }
+    if (prevBtn) prevBtn.disabled = stepIdx === 0;
     const isLast = stepIdx === ONBOARDING_STEPS.length - 1;
-    nextBtn.classList.toggle("hidden", isLast);
-    startBtn.classList.toggle("hidden", !isLast);
+    if (nextBtn) nextBtn.classList.toggle("hidden", isLast);
+    if (startBtn) startBtn.classList.toggle("hidden", !isLast);
   }
 
-  prevBtn.addEventListener("click", () => {
-    if (stepIdx > 0) { stepIdx--; renderStep(); }
-  });
-  nextBtn.addEventListener("click", () => {
-    if (stepIdx < ONBOARDING_STEPS.length - 1) { stepIdx++; renderStep(); }
-  });
-  startBtn.addEventListener("click", () => {
-    document.getElementById("onboarding").classList.add("hidden");
-    document.getElementById("app").classList.remove("hidden");
-    if (typeof windowResized === "function") {
-      requestAnimationFrame(() => windowResized());
-    }
-    const curr = getCurrentGlobalTemp();
-    if (curr !== null) {
-      lastTrackedTemp = curr;
-      updateSunVisual(curr);
-    }
-    setNarratorCharacter("SOL");
-    setNarratorText(ONBOARDING_STEPS[2].body, true);
-    renderRangeAndParisChart();
-    renderMonthComparisonChart();
-  });
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (stepIdx > 0) { stepIdx--; renderStep(); }
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (stepIdx < ONBOARDING_STEPS.length - 1) { stepIdx++; renderStep(); }
+    });
+  }
+  if (startBtn) {
+    startBtn.addEventListener("click", () => {
+      if (onboardingEl) onboardingEl.classList.add("hidden");
+      if (appEl) appEl.classList.remove("hidden");
+      if (typeof windowResized === "function") {
+        requestAnimationFrame(() => windowResized());
+      }
+      const curr = getCurrentGlobalTemp();
+      if (curr !== null) {
+        lastTrackedTemp = curr;
+        updateSunVisual(curr);
+      }
+      applyModeVisuals("SOL");
+      setNarratorText(ONBOARDING_STEPS[2].body, true);
+      renderRangeAndParisChart();
+      renderMonthComparisonChart();
+    });
+  }
   renderStep();
 
   document.querySelectorAll(".mode-btn").forEach((btn) => {
@@ -507,60 +604,57 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   const toggleVoiceBtn = document.getElementById("toggleVoiceBtn");
-  toggleVoiceBtn.addEventListener("click", () => {
-    appState.voiceEnabled = !appState.voiceEnabled;
-    toggleVoiceBtn.textContent = `Voz guía: ${appState.voiceEnabled ? "ON" : "OFF"}`;
-  });
+  if (toggleVoiceBtn) {
+    toggleVoiceBtn.addEventListener("click", () => {
+      appState.voiceEnabled = !appState.voiceEnabled;
+      toggleVoiceBtn.textContent = `Voz guía: ${appState.voiceEnabled ? "ON" : "OFF"}`;
+    });
+  }
 
   const monthSlider = document.getElementById("monthSlider");
   const monthLabel = document.getElementById("monthLabel");
-  monthSlider.addEventListener("input", () => {
-    appState.monthIndex = Number(monthSlider.value);
-    monthLabel.textContent = MONTHS[appState.monthIndex];
-    const curr = getCurrentGlobalTemp();
-    if (curr !== null) updateSunVisual(curr);
-    narrateTemperatureChange(`Mes ${MONTHS[appState.monthIndex]}`, false);
-  });
+  if (monthSlider) {
+    monthSlider.addEventListener("input", () => {
+      appState.monthIndex = Number(monthSlider.value);
+      if (monthLabel) monthLabel.textContent = MONTHS[appState.monthIndex];
+      const curr = getCurrentGlobalTemp();
+      if (curr !== null) updateSunVisual(curr);
+      narrateTemperatureChange(`Mes ${MONTHS[appState.monthIndex]}`, true);
+    });
+  }
 
   const yearSlider = document.getElementById("yearSlider");
   const yearLabel = document.getElementById("yearLabel");
-  yearSlider.addEventListener("input", () => {
-    appState.year = Number(yearSlider.value);
-    yearLabel.textContent = String(appState.year);
-    const curr = getCurrentGlobalTemp();
-    if (curr !== null) updateSunVisual(curr);
-    narrateTemperatureChange(`Año ${appState.year}`, false);
-    renderMonthComparisonChart();
-  });
+  if (yearSlider) {
+    yearSlider.addEventListener("input", () => {
+      appState.year = Number(yearSlider.value);
+      if (yearLabel) yearLabel.textContent = String(appState.year);
+      const curr = getCurrentGlobalTemp();
+      if (curr !== null) updateSunVisual(curr);
+      narrateTemperatureChange(`Año ${appState.year}`, true);
+      renderMonthComparisonChart();
+    });
+  }
 
   document.querySelectorAll(".season-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const season = btn.dataset.season;
       appState.activeSeason = season;
-      document.querySelectorAll(".season-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
+      applyModeVisuals(season);
 
-      setNarratorCharacter(season);
-
-      document.querySelectorAll(".season-bubble").forEach((el) => el.classList.add("hidden"));
-      const bubble = document.getElementById(`info-${season}`);
       const nhVal = appState.nhByYear[appState.year]?.seasons?.[season];
       const shVal = appState.shByYear[appState.year]?.seasons?.[season];
       const msg =
         `${SEASON_COLORS[season].label} (${appState.year}): ` +
         `Norte ${nhVal !== null && nhVal !== undefined ? nhVal.toFixed(2) + " °C" : "s/d"} · ` +
-        `Sur ${shVal !== null && shVal !== undefined ? shVal.toFixed(2) + " °C" : "s/d"}`;
-      bubble.textContent = msg;
-      bubble.classList.remove("hidden");
+        `Sur ${shVal !== null && shVal !== undefined ? shVal.toFixed(2) + " °C" : "s/d"}.`;
       setNarratorText(msg, true);
     });
   });
 
   const returnToSunMode = () => {
     appState.activeSeason = null;
-    document.querySelectorAll(".season-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".season-bubble").forEach((el) => el.classList.add("hidden"));
-    setNarratorCharacter("SOL");
+    applyModeVisuals("SOL");
 
     const displayVal = getCurrentGlobalTemp();
     const msg =
@@ -569,21 +663,58 @@ document.addEventListener("DOMContentLoaded", () => {
     setNarratorText(msg, true);
   };
 
-  document.getElementById("sunCharacter").addEventListener("click", returnToSunMode);
-  const narratorDockEl = document.getElementById("narratorDock");
-  if (narratorDockEl) {
-    narratorDockEl.addEventListener("click", () => {
-      if (appState.activeSeason) {
-        returnToSunMode();
-      }
-    });
+  const sunSeasonCoinBtn = document.getElementById("sunSeasonCoinBtn");
+  if (sunSeasonCoinBtn) sunSeasonCoinBtn.addEventListener("click", returnToSunMode);
+
+  const narratorImgEl = document.getElementById("narratorImg");
+  if (narratorImgEl) {
+    narratorImgEl.addEventListener("click", returnToSunMode);
   }
 
-  document.getElementById("updateRangeBtn").addEventListener("click", () => {
-    appState.rangeStart = Number(document.getElementById("rangeStart").value) || 1956;
-    appState.rangeEnd = Number(document.getElementById("rangeEnd").value) || 1970;
-    renderRangeAndParisChart();
+  // Ventanas emergentes para gráficas (por ventana de años y por meses)
+  const openModal = (modalId) => {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    if (modalId === "yearChartModal") renderRangeAndParisChart();
+    if (modalId === "monthChartModal") renderMonthComparisonChart();
+  };
+
+  const openYearBtn = document.getElementById("openYearChartBtn");
+  const openMonthBtn = document.getElementById("openMonthChartBtn");
+  if (openYearBtn) openYearBtn.addEventListener("click", () => openModal("yearChartModal"));
+  if (openMonthBtn) openMonthBtn.addEventListener("click", () => openModal("monthChartModal"));
+
+  document.querySelectorAll(".close-modal-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.dataset.close;
+      const modal = document.getElementById(targetId);
+      if (modal) modal.classList.add("hidden");
+    });
   });
+
+  document.querySelectorAll(".chart-modal").forEach((modal) => {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      document.querySelectorAll(".chart-modal").forEach((modal) => {
+        modal.classList.add("hidden");
+      });
+    }
+  });
+
+  const updateRangeBtn = document.getElementById("updateRangeBtn");
+  if (updateRangeBtn) {
+    updateRangeBtn.addEventListener("click", () => {
+      appState.rangeStart = Number(document.getElementById("rangeStart").value);
+      appState.rangeEnd = Number(document.getElementById("rangeEnd").value);
+      renderRangeAndParisChart();
+    });
+  }
 
   const updateMonthRangeBtn = document.getElementById("updateMonthRangeBtn");
   if (updateMonthRangeBtn) {
