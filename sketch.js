@@ -11,12 +11,12 @@ let lastPulseSoundTime = 0;
 
 // Puntos de referencia climática en el mapa (lon, lat, hemisferio)
 const CLIMATE_NODES = [
-  { id: "na_arctic", name: "Norteamérica / Ártico", lon: -105, lat: 55, hemi: "NH" },
-  { id: "eu_asia_n", name: "Europa / Eurasia Norte", lon: 45, lat: 52, hemi: "NH" },
-  { id: "trop_n", name: "Trópico Norte / Caribe", lon: -40, lat: 15, hemi: "NH" },
-  { id: "trop_s", name: "Trópico Sur / Pacífico", lon: -110, lat: -15, hemi: "SH" },
-  { id: "sa_s", name: "Sudamérica Sur / Atlántico", lon: -45, lat: -35, hemi: "SH" },
-  { id: "oc_s", name: "Oceanía / Índico Sur", lon: 115, lat: -28, hemi: "SH" }
+  { id: "na_arctic", name: "Norteamérica / Ártico", lon: -102, lat: 58, hemi: "NH", zonalKey: "44N-64N" },
+  { id: "eu_asia_n", name: "Europa / Eurasia Norte", lon: 22, lat: 54, hemi: "NH", zonalKey: "44N-64N" },
+  { id: "trop_n", name: "Trópico Norte / Caribe", lon: -65, lat: 18, hemi: "NH", zonalKey: "24S-24N" },
+  { id: "trop_s", name: "Trópico Sur / Pacífico", lon: -115, lat: -14, hemi: "SH", zonalKey: "24S-24N" },
+  { id: "sa_s", name: "Sudamérica Sur / Atlántico", lon: -42, lat: -32, hemi: "SH", zonalKey: "44S-24S" },
+  { id: "oc_s", name: "Oceanía / Índico Sur", lon: 122, lat: -22, hemi: "SH", zonalKey: "44S-24S" }
 ];
 
 // Estación meteorológica del Hemisferio Norte según índice de mes (0 = Ene .. 11 = Dic)
@@ -74,7 +74,10 @@ function setup() {
     soundFormats("mp3", "ogg");
     loadSound(
       "assets/ambient_loop.mp3",
-      (snd) => { ambientSound = snd; },
+      (snd) => {
+        ambientSound = snd;
+        ambientSound.setVolume(0.5);
+      },
       () => { ambientSound = null; }
     );
   }
@@ -89,7 +92,7 @@ function setup() {
     pulseOsc.start();
   }
 
-  // Botón de audio ambiente en loop
+  // Botón de audio ambiente en loop (volumen al 50%)
   const loopBtn = document.getElementById("toggleLoopBtn");
   if (loopBtn) {
     loopBtn.addEventListener("click", () => {
@@ -100,6 +103,7 @@ function setup() {
       }
       if (!isLoopPlaying) {
         ambientSound.setLoop(true);
+        ambientSound.setVolume(0.5);
         ambientSound.play();
         isLoopPlaying = true;
         loopBtn.textContent = "Audio ambiente: ON";
@@ -111,7 +115,7 @@ function setup() {
     });
   }
 
-  // Disparar señal sonora breve al mover año, mes o elegir estación
+  // Disparar señal sonora breve al mover año, mes, elegir estación o pulsar el Sol
   const yearSlider = document.getElementById("yearSlider");
   const monthSlider = document.getElementById("monthSlider");
   const triggerFeedbackSound = () => {
@@ -123,6 +127,11 @@ function setup() {
 
   if (yearSlider) yearSlider.addEventListener("input", triggerFeedbackSound);
   if (monthSlider) monthSlider.addEventListener("input", triggerFeedbackSound);
+
+  const sunEl = document.getElementById("sunCharacter");
+  const sunCoinEl = document.getElementById("sunSeasonCoinBtn");
+  if (sunCoinEl) sunCoinEl.addEventListener("click", triggerFeedbackSound);
+
   document.querySelectorAll(".season-btn").forEach((btn) => {
     btn.addEventListener("click", triggerFeedbackSound);
   });
@@ -281,14 +290,25 @@ function draw() {
     }
   });
 
-  if (hoveredNode && tooltipEl) {
+ if (hoveredNode && tooltipEl) {
+    const zRow = appState.zonalByYear?.[appState.year];
+    const zVal = hoveredNode.node.zonalKey ? zRow?.[hoveredNode.node.zonalKey] : null;
+    const zLine = (zVal !== null && zVal !== undefined && Number.isFinite(zVal))
+      ? `<br><span style="color:#9ecbff;">Franja anual (${hoveredNode.node.zonalKey}): <strong>${zVal >= 0 ? "+" : ""}${zVal.toFixed(2)} °C</strong></span>`
+      : "";
+
     tooltipEl.classList.remove("hidden");
-    tooltipEl.style.left = `${Math.min(width - 190, hoveredNode.pos.x + 14)}px`;
-    tooltipEl.style.top = `${Math.max(10, hoveredNode.pos.y - 28)}px`;
+    const tooltipW = tooltipEl.offsetWidth || 210;
+    const tooltipH = tooltipEl.offsetHeight || 82;
+    const leftPx = Math.max(10, Math.min(width - tooltipW - 10, hoveredNode.pos.x + 14));
+    const topPx = Math.max(10, Math.min(height - tooltipH - 10, hoveredNode.pos.y - 24));
+    tooltipEl.style.left = `${leftPx}px`;
+    tooltipEl.style.top = `${topPx}px`;
     tooltipEl.innerHTML =
       `<strong>${hoveredNode.node.name}</strong><br>` +
       `${MONTHS[appState.monthIndex]} ${appState.year} · Estación: <strong>${hoveredNode.effectiveSeason}</strong><br>` +
-      `Anomalía: <strong>${hoveredNode.tempC >= 0 ? "+" : ""}${hoveredNode.tempC.toFixed(2)} °C</strong>`;
+      `Anomalía: <strong>${hoveredNode.tempC >= 0 ? "+" : ""}${hoveredNode.tempC.toFixed(2)} °C</strong>` +
+      zLine;
   } else if (tooltipEl) {
     tooltipEl.classList.add("hidden");
   }
