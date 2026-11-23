@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Clima &amp; Pulsaciones — GISTEMP (1925–2025)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/p5@1.11.13/lib/p5.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/p5@1.11.13/lib/addons/p5.sound.min.js"></script>
@@ -13,10 +16,17 @@
   <!-- VENTANAS INICIALES (3 PASOS) -->
   <section id="onboarding" class="onboarding-overlay">
     <div class="onboarding-card">
-      <div class="step-indicator">Paso <span id="stepNum">1</span> de 3</div>
-      <div id="stepContent">
-        <h2>1. El cambio climático en el tiempo</h2>
-        <p>Durante el último siglo, la temperatura superficial del planeta ha mostrado variaciones significativas respecto a su línea base histórica.</p>
+      <div class="onboarding-body-row">
+        <div class="onboarding-text-col">
+          <div class="step-indicator">Paso <span id="stepNum">1</span> de 3</div>
+          <div id="stepContent">
+            <h2>1. El cambio climático en el tiempo</h2>
+            <p>Durante el último siglo, la temperatura superficial del planeta ha mostrado variaciones significativas respecto a su línea base histórica.</p>
+          </div>
+        </div>
+        <div class="onboarding-media-col">
+          <img id="onboardingStepImg" src="assets/imagen_1.png" alt="Ilustración del paso" class="onboarding-step-img" />
+        </div>
       </div>
       <div class="onboarding-actions">
         <button id="prevStepBtn" class="btn secondary" disabled>Anterior</button>
@@ -29,6 +39,10 @@
   <!-- APLICACIÓN PRINCIPAL -->
   <div id="app" class="app-shell hidden">
     <header class="top-bar">
+      <div class="audio-controls">
+        <button id="toggleLoopBtn" class="btn small">Audio ambiente: OFF</button>
+      </div>
+
       <div class="map-mode-switch" role="group" aria-label="Modo de visualización del mapa">
         <span>Mapa:</span>
         <button class="mode-btn active" data-mode="continents">Continentes</button>
@@ -36,8 +50,7 @@
         <button class="mode-btn" data-mode="flags">Banderas</button>
       </div>
 
-      <div class="audio-controls">
-        <button id="toggleLoopBtn" class="btn small">Audio ambiente: OFF</button>
+      <div class="voice-controls">
         <button id="toggleVoiceBtn" class="btn small">Voz guía: ON</button>
       </div>
     </header>
@@ -50,12 +63,11 @@
         <input id="monthSlider" type="range" min="0" max="11" value="0" orient="vertical" />
       </aside>
 
-      <!-- CENTRO: MAPA + SOL + PULSACIONES + AÑO + PERSONAJE GUION -->
+      <!-- CENTRO: MAPA + SOL + PULSACIONES + AÑO + GUION + PERSONAJE -->
       <section class="center-stage">
         <div id="p5-container" class="p5-container"></div>
 
-        <div id="sunCharacter" class="sun-orb" title="Sol — Anomalía Global (clic para volver al modo Sol)">
-          <img src="assets/sol.png" alt="Sol" class="sun-icon-img" />
+        <div id="sunCharacter" class="sun-orb" aria-label="Anomalía global">
           <div id="sunReadout" class="sun-readout">-- °C</div>
         </div>
 
@@ -67,113 +79,118 @@
           <input id="yearSlider" type="range" min="1925" max="2025" value="1925" />
         </div>
 
-        <!-- PERSONAJE INFERIOR + TEXTO GUION -->
+       <!-- FRANJA INFERIOR: BOTONES FUERA | RECUADRO DE GUION | PERSONAJE FUERA -->
         <div id="narratorDock" class="narrator-dock">
-          <img id="narratorImg" src="assets/char_1.png" alt="Personaje Sol" class="narrator-char" />
-          <p id="narratorScript" class="narrator-script">
-            Modo Sol activo: observa cómo brilla el Sol y cambia la temperatura a lo largo del tiempo. Haz clic aquí o en el Sol para volver a este modo.
-          </p>
+          <div class="chart-coin-triggers">
+            <button id="openYearChartBtn" type="button" class="coin-btn chart-coin" title="Comparativa por ventana de años (París)">
+              <img src="assets/año.png" alt="Gráfica por años" class="coin-img" />
+            </button>
+            <button id="openMonthChartBtn" type="button" class="coin-btn chart-coin" title="Comparativa por meses del año activo">
+              <img src="assets/mes.png" alt="Gráfica por meses" class="coin-img" />
+            </button>
+          </div>
+
+          <div class="narrator-script-box">
+            <p id="narratorScript" class="narrator-script">
+              Modo Sol activo — Anomalía global en Enero de 1925: -0.30 °C respecto a 1951–1980.
+            </p>
+          </div>
+
+          <img id="narratorImg" src="assets/char_1.png" alt="Personaje Sol" class="narrator-char" title="Clic para volver al modo Sol" />
         </div>
       </section>
 
-      <!-- DERECHA: 4 ESTACIONES + CUADROS INFORMATIVOS -->
+      <!-- DERECHA: SOL + 4 MONEDAS DE ESTACIONES -->
       <aside class="seasons-panel">
-        <div class="season-row" data-season="DJF">
-          <button class="season-btn" data-season="DJF">
-            <img src="assets/invierno.png" alt="Invierno" class="season-btn-img" />
-            <span>DJF</span>
-          </button>
-          <div id="info-DJF" class="season-bubble hidden">Invierno N / Verano S</div>
-        </div>
+        <button id="sunSeasonCoinBtn" type="button" class="coin-btn active" title="Modo Sol (volver a pulsaciones normales)">
+          <img src="assets/sol.png" alt="Sol" class="coin-img" />
+        </button>
 
-        <div class="season-row" data-season="MAM">
-          <button class="season-btn" data-season="MAM">
-            <img src="assets/primavera.png" alt="Primavera" class="season-btn-img" />
-            <span>MAM</span>
-          </button>
-          <div id="info-MAM" class="season-bubble hidden">Primavera N / Otoño S</div>
-        </div>
+        <button type="button" class="coin-btn season-btn" data-season="DJF" title="DJF — Invierno N / Verano S">
+          <img src="assets/invierno.png" alt="Invierno" class="coin-img" />
+        </button>
 
-        <div class="season-row" data-season="JJA">
-          <button class="season-btn" data-season="JJA">
-            <img src="assets/verano.png" alt="Verano" class="season-btn-img" />
-            <span>JJA</span>
-          </button>
-          <div id="info-JJA" class="season-bubble hidden">Verano N / Invierno S</div>
-        </div>
+        <button type="button" class="coin-btn season-btn" data-season="MAM" title="MAM — Primavera N / Otoño S">
+          <img src="assets/primavera.png" alt="Primavera" class="coin-img" />
+        </button>
 
-        <div class="season-row" data-season="SON">
-          <button class="season-btn" data-season="SON">
-            <img src="assets/otono.png" alt="Otoño" class="season-btn-img" />
-            <span>SON</span>
-          </button>
-          <div id="info-SON" class="season-bubble hidden">Otoño N / Primavera S</div>
-        </div>
+        <button type="button" class="coin-btn season-btn" data-season="JJA" title="JJA — Verano N / Invierno S">
+          <img src="assets/verano.png" alt="Verano" class="coin-img" />
+        </button>
+
+        <button type="button" class="coin-btn season-btn" data-season="SON" title="SON — Otoño N / Primavera S">
+          <img src="assets/otono.png" alt="Otoño" class="coin-img" />
+        </button>
       </aside>
     </main>
 
-    <!-- DOS MÉTRICAS LADO A LADO: VENTANA DE AÑOS (PARÍS) + COMPARATIVA POR MESES -->
-    <section class="metrics-row">
-      <div class="range-analysis">
-        <div class="range-controls">
-          <h3>Comparativa por ventana de años</h3>
-          <div class="range-inputs">
-            <label>Desde: <input id="rangeStart" type="number" min="1925" max="2025" value="1956" /></label>
-            <label>Hasta: <input id="rangeEnd" type="number" min="1925" max="2025" value="1970" /></label>
-            <button id="updateRangeBtn" class="btn small primary">Analizar ventana</button>
-          </div>
-          <p id="rangeSummary" class="range-summary">
-            Selecciona una ventana (ej. 1956–1970) para ver el promedio y su relación con los umbrales de +1.5 °C y +2.0 °C (base 1880–1900).
-          </p>
+    <!-- VENTANA EMERGENTE: COMPARATIVA POR VENTANA DE AÑOS (PARÍS) -->
+    <div id="yearChartModal" class="chart-modal hidden" role="dialog" aria-modal="true" aria-labelledby="yearModalTitle">
+      <div class="chart-modal-card">
+        <div class="chart-modal-header">
+          <h3 id="yearModalTitle">Comparativa por ventana de años</h3>
+          <button type="button" class="btn small close-modal-btn" data-close="yearChartModal">✕</button>
         </div>
-        <canvas id="parisChart" width="420" height="140"></canvas>
+        <div class="range-inputs">
+          <label>Desde: <input id="rangeStart" type="number" min="1925" max="2025" value="1956" /></label>
+          <label>Hasta: <input id="rangeEnd" type="number" min="1925" max="2025" value="1970" /></label>
+          <button id="updateRangeBtn" type="button" class="btn small primary">Analizar ventana</button>
+        </div>
+        <p id="rangeSummary" class="range-summary">
+          Selecciona una ventana (ej. 1956–1970) para ver el promedio y su relación con los umbrales de +1.5 °C y +2.0 °C (base 1880–1900).
+        </p>
+        <canvas id="parisChart" width="460" height="160"></canvas>
       </div>
+    </div>
 
-      <div class="range-analysis month-analysis">
-        <div class="range-controls">
-          <h3>Comparativa por meses (<span id="monthRangeYear">1925</span>)</h3>
-          <div class="range-inputs">
-            <label>Desde:
-              <select id="monthStartSelect">
-                <option value="0" selected>Enero</option>
-                <option value="1">Febrero</option>
-                <option value="2">Marzo</option>
-                <option value="3">Abril</option>
-                <option value="4">Mayo</option>
-                <option value="5">Junio</option>
-                <option value="6">Julio</option>
-                <option value="7">Agosto</option>
-                <option value="8">Septiembre</option>
-                <option value="9">Octubre</option>
-                <option value="10">Noviembre</option>
-                <option value="11">Diciembre</option>
-              </select>
-            </label>
-            <label>Hasta:
-              <select id="monthEndSelect">
-                <option value="0">Enero</option>
-                <option value="1">Febrero</option>
-                <option value="2">Marzo</option>
-                <option value="3">Abril</option>
-                <option value="4">Mayo</option>
-                <option value="5">Junio</option>
-                <option value="6">Julio</option>
-                <option value="7">Agosto</option>
-                <option value="8">Septiembre</option>
-                <option value="9">Octubre</option>
-                <option value="10">Noviembre</option>
-                <option value="11" selected>Diciembre</option>
-              </select>
-            </label>
-            <button id="updateMonthRangeBtn" class="btn small primary">Comparar meses</button>
-          </div>
-          <p id="monthRangeSummary" class="range-summary">
-            Selecciona un rango de meses para comparar sus anomalías en el año activo.
-          </p>
+    <!-- VENTANA EMERGENTE: COMPARATIVA POR MESES -->
+    <div id="monthChartModal" class="chart-modal hidden" role="dialog" aria-modal="true" aria-labelledby="monthModalTitle">
+      <div class="chart-modal-card">
+        <div class="chart-modal-header">
+          <h3 id="monthModalTitle">Comparativa por meses (<span id="monthRangeYear">1925</span>)</h3>
+          <button type="button" class="btn small close-modal-btn" data-close="monthChartModal">✕</button>
         </div>
-        <canvas id="monthsChart" width="420" height="140"></canvas>
+        <div class="range-inputs">
+          <label>Desde:
+            <select id="monthStartSelect">
+              <option value="0" selected>Enero</option>
+              <option value="1">Febrero</option>
+              <option value="2">Marzo</option>
+              <option value="3">Abril</option>
+              <option value="4">Mayo</option>
+              <option value="5">Junio</option>
+              <option value="6">Julio</option>
+              <option value="7">Agosto</option>
+              <option value="8">Septiembre</option>
+              <option value="9">Octubre</option>
+              <option value="10">Noviembre</option>
+              <option value="11">Diciembre</option>
+            </select>
+          </label>
+          <label>Hasta:
+            <select id="monthEndSelect">
+              <option value="0">Enero</option>
+              <option value="1">Febrero</option>
+              <option value="2">Marzo</option>
+              <option value="3">Abril</option>
+              <option value="4">Mayo</option>
+              <option value="5">Junio</option>
+              <option value="6">Julio</option>
+              <option value="7">Agosto</option>
+              <option value="8">Septiembre</option>
+              <option value="9">Octubre</option>
+              <option value="10">Noviembre</option>
+              <option value="11" selected>Diciembre</option>
+            </select>
+          </label>
+          <button id="updateMonthRangeBtn" type="button" class="btn small primary">Comparar meses</button>
+        </div>
+        <p id="monthRangeSummary" class="range-summary">
+          Selecciona un rango de meses para comparar sus anomalías en el año activo.
+        </p>
+        <canvas id="monthsChart" width="460" height="160"></canvas>
       </div>
-    </section>
+    </div>
   </div>
 
   <script src="script.js"></script>
