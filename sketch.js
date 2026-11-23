@@ -2,12 +2,18 @@
 let mapImages = {};
 let ambientSound = null;
 let isLoopPlaying = false;
+let wantAmbientOn = true;
 
 // Sonido reactivo a anomalías térmicas (p5.sound)
 let pulseOsc = null;
 let pulseEnv = null;
 let reactiveAudioEnabled = true;
 let lastPulseSoundTime = 0;
+
+// Voz guía con p5.Speech
+let guideSpeech = null;
+let guideVoiceEnabled = true;
+let lastSpokenText = "";
 
 // Puntos de referencia climática en el mapa (lon, lat, hemisferio)
 const CLIMATE_NODES = [
@@ -41,8 +47,83 @@ function getOppositeSeason(season) {
 function getContainerSize() {
   const container = document.getElementById("p5-container");
   const w = container && container.clientWidth > 0 ? container.clientWidth : 900;
-  const h = container && container.clientHeight > 0 ? container.clientHeight : 450;
+  const h = Math.round(w / 2); // proporción 2:1 fija, el mapa nunca se estira
   return { w, h };
+}
+
+function startAmbientLoopIfReady() {
+  if (!wantAmbientOn || !ambientSound || isLoopPlaying) return;
+  if (typeof userStartAudio === "function") {
+    userStartAudio();
+  }
+  const ctx = typeof getAudioContext === "function" ? getAudioContext() : null;
+  if (ctx && ctx.state === "running") {
+    ambientSound.setLoop(true);
+    ambientSound.setVolume(0.5);
+    ambientSound.play();
+    isLoopPlaying = true;
+    const loopBtn = document.getElementById("toggleLoopBtn");
+    if (loopBtn) loopBtn.textContent = "Audio ambiente: ON";
+  } else if (ctx && typeof ctx.resume === "function") {
+    ctx.resume().then(() => {
+      if (!wantAmbientOn || !ambientSound || isLoopPlaying) return;
+      ambientSound.setLoop(true);
+      ambientSound.setVolume(0.5);
+      ambientSound.play();
+      isLoopPlaying = true;
+      const loopBtn = document.getElementById("toggleLoopBtn");
+      if (loopBtn) loopBtn.textContent = "Audio ambiente: ON";
+    }).catch(() => {});
+  }
+}
+
+function initGuideSpeech() {
+  if (typeof p5 === "undefined" || typeof p5.Speech !== "function") return;
+  if (!guideSpeech) {
+    guideSpeech = new p5.Speech();
+    guideSpeech.setLang("es-ES");
+    guideSpeech.setRate(1.0);
+    guideSpeech.setPitch(1.0);
+    guideSpeech.onLoad = () => {
+      if (Array.isArray(guideSpeech.voices)) {
+        const esVoice = guideSpeech.voices.find((v) =>
+          /es(-|_|$)/i.test(v.lang || "")
+        );
+        if (esVoice && esVoice.name) {
+          guideSpeech.setVoice(esVoice.name);
+        }
+      }
+    };
+  }
+}
+
+function speakGuideText(text, force = false) {
+  if (!guideVoiceEnabled) return;
+  const cleanText = (text || "").trim();
+  if (!cleanText) return;
+  if (!force && cleanText === lastSpokenText) return;
+
+  initGuideSpeech();
+  if (!guideSpeech) return;
+
+  lastSpokenText = cleanText;
+  if (typeof guideSpeech.cancel === "function") {
+    guideSpeech.cancel();
+  } else if (typeof guideSpeech.stop === "function") {
+    guideSpeech.stop();
+  }
+  guideSpeech.speak(cleanText);
+}
+
+function stopGuideText() {
+  lastSpokenText = "";
+  if (guideSpeech) {
+    if (typeof guideSpeech.cancel === "function") {
+      guideSpeech.cancel();
+    } else if (typeof guideSpeech.stop === "function") {
+      guideSpeech.stop();
+    }
+  }
 }
 
 function preload() {
@@ -59,7 +140,7 @@ function preload() {
   safeLoadImg("countries", "assets/map_countries.png");
   safeLoadImg("flags", "assets/map_flags.png");
   safeLoadImg("anima_DJF", "assets/invierno_anima.png");
-  safeLoadImg("anima_MAM", "assets/primevera_anima.png");
+  safeLoadImg("anima_MAM", "assets/primavera_anima.png");
   safeLoadImg("anima_JJA", "assets/verano_anima.png");
   safeLoadImg("anima_SON", "assets/otono_anima.png");
 }
@@ -69,6 +150,9 @@ function setup() {
   const canvas = createCanvas(w, h);
   canvas.parent("p5-container");
 
+  // Inicializar sintetizador de voz guía
+  initGuideSpeech();
+
   // Cargar audio ambiente fuera de preload() para no bloquear el lienzo
   if (typeof loadSound === "function") {
     soundFormats("mp3", "ogg");
@@ -77,6 +161,7 @@ function setup() {
       (snd) => {
         ambientSound = snd;
         ambientSound.setVolume(0.5);
+        startAmbientLoopIfReady();
       },
       () => { ambientSound = null; }
     );
@@ -92,9 +177,10 @@ function setup() {
     pulseOsc.start();
   }
 
-  // Botón de audio ambiente en loop (volumen al 50%)
+  // Botón de audio ambiente en loop (volumen al 50%, inicia en ON)
   const loopBtn = document.getElementById("toggleLoopBtn");
   if (loopBtn) {
+    loopBtn.textContent = wantAmbientOn ? "Audio ambiente: ON" : "Audio ambiente: OFF";
     loopBtn.addEventListener("click", () => {
       userStartAudio();
       if (!ambientSound) {
@@ -102,12 +188,10 @@ function setup() {
         return;
       }
       if (!isLoopPlaying) {
-        ambientSound.setLoop(true);
-        ambientSound.setVolume(0.5);
-        ambientSound.play();
-        isLoopPlaying = true;
-        loopBtn.textContent = "Audio ambiente: ON";
+        wantAmbientOn = true;
+        startAmbientLoopIfReady();
       } else {
+        wantAmbientOn = false;
         ambientSound.stop();
         isLoopPlaying = false;
         loopBtn.textContent = "Audio ambiente: OFF";
@@ -115,11 +199,41 @@ function setup() {
     });
   }
 
+  // Botón de Voz guía ON / OFF
+  const voiceBtn = document.getElementById("toggleVoiceBtn");
+  const scriptEl = document.querySelector(".narrator-script");
+  if (voiceBtn) {
+    guideVoiceEnabled = !/OFF/i.test(voiceBtn.textContent || "");
+    voiceBtn.addEventListener("click", () => {
+      userStartAudio();
+      guideVoiceEnabled = !guideVoiceEnabled;
+      voiceBtn.textContent = `Voz guía: ${guideVoiceEnabled ? "ON" : "OFF"}`;
+      if (guideVoiceEnabled) {
+        const currentScript = scriptEl?.textContent || "";
+        speakGuideText(currentScript, true);
+      } else {
+        stopGuideText();
+      }
+    });
+  }
+
+  // Leer guion al hacer clic sobre el personaje narrador o su caja de texto
+  const narratorChar = document.querySelector(".narrator-char");
+  const narratorBox = document.querySelector(".narrator-script-box");
+  const readCurrentNarrator = () => {
+    userStartAudio();
+    const currentScript = scriptEl?.textContent || "";
+    speakGuideText(currentScript, true);
+  };
+  if (narratorChar) narratorChar.addEventListener("click", readCurrentNarrator);
+  if (narratorBox) narratorBox.addEventListener("click", readCurrentNarrator);
+
   // Disparar señal sonora breve al mover año, mes, elegir estación o pulsar el Sol
   const yearSlider = document.getElementById("yearSlider");
   const monthSlider = document.getElementById("monthSlider");
   const triggerFeedbackSound = () => {
     userStartAudio();
+    startAmbientLoopIfReady();
     const gEntry = appState.globalByYear[appState.year];
     const val = gEntry?.months?.[appState.monthIndex] ?? gEntry?.annual ?? 0;
     playThermalPulseSound(val, 0);
@@ -128,7 +242,6 @@ function setup() {
   if (yearSlider) yearSlider.addEventListener("input", triggerFeedbackSound);
   if (monthSlider) monthSlider.addEventListener("input", triggerFeedbackSound);
 
-  const sunEl = document.getElementById("sunCharacter");
   const sunCoinEl = document.getElementById("sunSeasonCoinBtn");
   if (sunCoinEl) sunCoinEl.addEventListener("click", triggerFeedbackSound);
 
@@ -219,10 +332,9 @@ function drawSeasonPulse(x, y, radius, season, strokeCol) {
 function draw() {
   // Reajusta automáticamente si el contenedor pasó de oculto (0px) a visible
   const container = document.getElementById("p5-container");
-  if (container && container.clientWidth > 0 && container.clientHeight > 0) {
-    if (width !== container.clientWidth || height !== container.clientHeight) {
-      resizeCanvas(container.clientWidth, container.clientHeight);
-    }
+  if (container && container.clientWidth > 0) {
+    const { w, h } = getContainerSize();
+    if (width !== w || height !== h) resizeCanvas(w, h);
   }
 
   background(12, 26, 52);
@@ -260,37 +372,47 @@ function draw() {
     const tempC = getTempForNode(node);
     const effectiveSeason = getEffectiveSeasonForHemi(node.hemi);
 
-    const speedFactor = map(constrain(tempC, -1, 2.5), -1, 2.5, 2200, 1100);
+    const speedFactor = map(constrain(tempC, -1, 2.5), -1, 2.5, 2100, 950);
     const pulseProgress = ((millis() / speedFactor) + idx * 0.18) % 1;
-    const baseSize = map(constrain(tempC, -1, 2.5), -1, 2.5, 14, 44);
-    const radius = baseSize * (0.35 + pulseProgress * 0.95);
+    const baseSize = map(constrain(tempC, -1, 2.5), -1, 2.5, 24, 68);
+    const radius = baseSize * (0.35 + pulseProgress * 1.05);
 
-    const pulseColor = tempC >= 0
-      ? color(255, 105, 70, 225 * (1 - pulseProgress))
-      : color(90, 195, 255, 225 * (1 - pulseProgress));
+    const isWarm = tempC >= 0;
+    const alpha = 255 * (1 - pulseProgress * 0.85);
+    const pulseColor = isWarm
+      ? color(255, 72, 35, alpha)     // Naranja-rojo vibrante
+      : color(45, 195, 255, alpha);   // Cian-azul brillante
+
+    // Halo suave interior para dar más cuerpo al color
+    noStroke();
+    fill(isWarm ? color(255, 95, 45, 55 * (1 - pulseProgress)) : color(60, 200, 255, 55 * (1 - pulseProgress)));
+    circle(pos.x, pos.y, radius * 1.55);
 
     drawSeasonPulse(pos.x, pos.y, radius, effectiveSeason, pulseColor);
 
-    // Núcleo de la pulsación
-    noStroke();
-    fill(tempC >= 0 ? "#ff6b4a" : "#5ec8ff");
-    circle(pos.x, pos.y, 8);
+    // Núcleo más marcado de la pulsación
+    stroke(10, 20, 40, 210);
+    strokeWeight(1.8);
+    fill(isWarm ? "#ff522b" : "#38c6ff");
+    circle(pos.x, pos.y, 11);
 
-    // Si hay una estación seleccionada, mostrar el dato junto a la pulsación
+    // Si hay una estación seleccionada, mostrar el dato con mayor contraste
     if (appState.activeSeason) {
       noStroke();
-      fill(255);
-      textSize(11);
+      fill(255, 248, 220);
+      textSize(12);
+      textStyle(BOLD);
       textAlign(CENTER, TOP);
-      text(`${tempC >= 0 ? "+" : ""}${tempC.toFixed(2)}°C (${effectiveSeason})`, pos.x, pos.y + 9);
+      text(`${tempC >= 0 ? "+" : ""}${tempC.toFixed(2)}°C (${effectiveSeason})`, pos.x, pos.y + 11);
+      textStyle(NORMAL);
     }
 
-    if (dist(mouseX, mouseY, pos.x, pos.y) < 24) {
+    if (dist(mouseX, mouseY, pos.x, pos.y) < 28) {
       hoveredNode = { node, pos, tempC, effectiveSeason };
     }
   });
 
- if (hoveredNode && tooltipEl) {
+  if (hoveredNode && tooltipEl) {
     const zRow = appState.zonalByYear?.[appState.year];
     const zVal = hoveredNode.node.zonalKey ? zRow?.[hoveredNode.node.zonalKey] : null;
     const zLine = (zVal !== null && zVal !== undefined && Number.isFinite(zVal))
